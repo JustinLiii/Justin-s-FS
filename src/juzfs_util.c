@@ -573,3 +573,44 @@ struct juzfs_dentry* jfs_get_dentry(struct juzfs_inode * inode, int dir) {
 
     return &inode->dentrys[dir];
 }
+
+/**
+ * @brief 
+ * 
+ * @return int 
+ */
+int sfs_umount() {
+    struct juzfs_super_d  juzfs_super_d; 
+
+    if (!super.is_mounted) {
+        return 0;
+    }
+
+    jfs_sync_inode(super.root_dentry->inode);     /* 从根节点向下刷写节点 */
+                                                    
+    juzfs_super_d.magic               = JFS_MAGIC;
+    juzfs_super_d.map_inode_blks      = super.map_inode_blks;
+    juzfs_super_d.map_inode_offset    = super.map_inode_offset;
+    juzfs_super_d.data_offset         = super.data_offset;
+    juzfs_super_d.sz_usage            = super.sz_usage;
+
+    if (jfs_driver_write(JFS_SUPER_OFS, (uint8_t *)&juzfs_super_d, 
+                     sizeof(struct juzfs_super_d)) != 0) {
+        return -1;
+    }
+
+    if (jfs_driver_write(juzfs_super_d.map_inode_offset, (uint8_t *)(super.map_inode), 
+                         JFS_BLKS_SZ(juzfs_super_d.map_inode_blks)) != 0) {
+        return -1;
+    }
+
+    if (jfs_driver_write(juzfs_super_d.map_data_offset, (uint8_t *)(super.map_data), 
+                         JFS_BLKS_SZ(juzfs_super_d.map_data_blks)) != 0) {
+        return -1;
+    }
+
+    free(super.map_inode);
+    ddriver_close(JFS_DRIVER());
+
+    return 0;
+}

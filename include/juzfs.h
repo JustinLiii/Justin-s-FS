@@ -53,5 +53,6 @@ struct juzfs_dentry*jfs_lookup(const char *, bool*, bool*);
 int 				jfs_calc_lvl(const char *);
 char* 				jfs_get_name(const char*);
 struct juzfs_dentry*jfs_get_dentry(struct juzfs_inode *, int);
+int 				sfs_umount();
 
 #endif  /* _juzfs_H_ */

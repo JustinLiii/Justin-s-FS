@@ -64,10 +64,11 @@ void* juzfs_init(struct fuse_conn_info * conn_info) {
  * @return void
  */
 void juzfs_destroy(void* p) {
-	/* TODO: 在这里进行卸载 */
-	
-	ddriver_close(super.fd);
-
+	if (jfs_umount() != 0) {
+		// SFS_DBG("[%s] unmount error\n", __func__);
+		fuse_exit(fuse_get_context()->fuse);
+		return;
+	}
 	return;
 }
 
