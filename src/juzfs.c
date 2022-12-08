@@ -47,16 +47,11 @@ static struct fuse_operations operations = {
  * @return void*
  */
 void* juzfs_init(struct fuse_conn_info * conn_info) {
-	if (sfs_mount(sfs_options) != SFS_ERROR_NONE) {
-        SFS_DBG("[%s] mount error\n", __func__);
+	if (jfs_mount(juzfs_options) != 0) {
+        // SFS_DBG("[%s] mount error\n", __func__);
 		fuse_exit(fuse_get_context()->fuse);
 		return NULL;
 	} 
-	return NULL;
-
-	/* 下面是一个控制设备的示例 */
-	super.fd = ddriver_open(juzfs_options.device);
-	
 	return NULL;
 }
 

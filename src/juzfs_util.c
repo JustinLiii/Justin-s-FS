@@ -96,6 +96,7 @@ int jfs_mount(struct custom_options options){
     
     super.max_ino = juzfs_super_d.max_ino;
     super.map_inode = (uint8_t *)malloc(JFS_BLKS_SZ(juzfs_super_d.map_inode_blks));
+    super.map_data = (uint8_t *)malloc(JFS_BLKS_SZ(juzfs_super_d.map_data_blks));
     // super.inode_list = (struct juzfs_inode*)malloc(JFS_BLKS_SZ(juzfs_super_d.max_ino));
     super.map_inode_blks = juzfs_super_d.map_inode_blks;
     super.map_inode_offset = juzfs_super_d.map_inode_offset;
