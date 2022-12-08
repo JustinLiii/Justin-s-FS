@@ -423,3 +423,126 @@ uint64_t  jfs_alloc_data_blk()
 
     return JFS_DATA_OFS(blk_cursor);
 }
+
+/**
+ * @brief 
+ * path: /qwe/ad  total_lvl = 2,
+ *      1) find /'s inode       lvl = 1
+ *      2) find qwe's dentry 
+ *      3) find qwe's inode     lvl = 2
+ *      4) find ad's dentry
+ *
+ * path: /qwe     total_lvl = 1,
+ *      1) find /'s inode       lvl = 1
+ *      2) find qwe's dentry
+ * 
+ * @param path 
+ * @return struct juzfs_dentry* 
+ */
+struct juzfs_dentry* jfs_lookup(const char * path, bool* is_find, bool* is_root) {
+    struct juzfs_dentry* dentry_cursor = super.root_dentry;
+    struct juzfs_dentry* dentry_ret = NULL;
+    struct juzfs_inode*  inode; 
+    int   total_lvl = jfs_calc_lvl(path);
+    int   lvl = 0;
+    bool is_hit;
+    char* fname = NULL;
+    char* path_cpy = (char*)malloc(sizeof(path));
+    *is_root = false;
+    strcpy(path_cpy, path);
+
+    if (total_lvl == 0) {                           /* 根目录 */
+        *is_find = true;
+        *is_root = true;
+        dentry_ret = super.root_dentry;
+    }
+    fname = strtok(path_cpy, "/");       
+    while (fname)
+    {   
+        lvl++;
+        if (dentry_cursor->inode == NULL) {           /* Cache机制 */
+            jfs_read_inode(dentry_cursor, dentry_cursor->ino);
+        }
+
+        inode = dentry_cursor->inode;
+
+        if (JFS_IS_FILE(inode) && lvl < total_lvl) {
+            // SFS_DBG("[%s] not a dir\n", __func__);
+            dentry_ret = inode->dentry;
+            break;
+        }
+        if (JFS_IS_DIR(inode)) {
+            dentry_cursor = inode->dentrys;
+            is_hit        = false;
+
+            for (int i = 0; i < inode->dir_cnt; i++)
+            {
+                dentry_cursor = &inode->dentrys[i];
+                if (memcmp(dentry_cursor->name, fname, strlen(fname)) == 0) {
+                    is_hit = true;
+                    break;
+                }
+            }
+            
+            if (!is_hit) {
+                *is_find = false;
+                // SFS_DBG("[%s] not found %s\n", __func__, fname);
+                dentry_ret = inode->dentry;
+                break;
+            }
+
+            if (is_hit && lvl == total_lvl) {
+                *is_find = true;
+                dentry_ret = dentry_cursor;
+                break;
+            }
+        }
+        fname = strtok(NULL, "/"); 
+    }
+
+    if (dentry_ret->inode == NULL) {
+        dentry_ret->inode = jfs_read_inode(dentry_ret, dentry_ret->ino);
+    }
+    
+    return dentry_ret;
+}
+
+/**
+ * @brief 计算路径的层级
+ * exm: /av/c/d/f
+ * -> lvl = 4
+ * /
+ * -> lvl = 0
+ * /a
+ * -> lvl = 1
+ * @param path 
+ * @return int 
+ */
+int jfs_calc_lvl(const char * path) {
+    // char* path_cpy = (char *)malloc(strlen(path));
+    // strcpy(path_cpy, path);
+    char* str = path;
+    int   lvl = 0;
+    if (strcmp(path, "/") == 0) {
+        return lvl;
+    }
+    while (*str != NULL) {
+        if (*str == '/') {
+            lvl++;
+        }
+        str++;
+    }
+    return lvl;
+}
+
+/**
+ * @brief 获取文件名
+ * 
+ * @param path 
+ * @return char* 
+ */
+char* jfs_get_name(const char* path) {
+    char ch = '/';
+    char *q = strrchr(path, ch) + 1;
+    return q;
+}

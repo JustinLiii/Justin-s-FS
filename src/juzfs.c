@@ -1,4 +1,5 @@
 #include "juzfs.h"
+#include "types.h"
 
 /******************************************************************************
 * SECTION: 宏定义
@@ -77,7 +78,30 @@ void juzfs_destroy(void* p) {
  * @return int 0成功，否则失败
  */
 int juzfs_mkdir(const char* path, mode_t mode) {
-	/* TODO: 解析路径，创建目录 */
+	(void)mode;
+	bool is_find, is_root;
+	char* fname;
+	struct juzfs_dentry* last_dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_dentry* dentry;
+	struct juzfs_inode*  inode;
+
+	// 我们希望 path未找到，但是lookup返回上一级的dentry，且其为目录文件
+	// 如: /a/b/c -> dentry of /a/b, 且 /a/b 为目录
+	if (is_find) {
+		return -1;
+	}
+
+	if (JFS_IS_FILE(last_dentry->inode)) {
+		return -1;
+	}
+
+	fname  = jfs_get_name(path);
+	dentry = new_dentry(fname, last_dentry,DIR_TYPE);
+	inode  = jfs_alloc_inode(dentry);
+	jfs_alloc_dentry(last_dentry->inode, dentry);
+	jfs_sync_inode(inode);
+	jfs_sync_inode(last_dentry->inode);
+	
 	return 0;
 }
 

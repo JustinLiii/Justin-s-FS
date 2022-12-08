@@ -46,8 +46,11 @@ int                	jfs_driver_read(int, uint8_t *, int);
 int 				jfs_driver_write(int, uint8_t *, int);
 struct juzfs_inode* jfs_alloc_inode(struct juzfs_dentry *);
 int 				jfs_sync_inode(struct juzfs_inode *);
-struct juzfs_inode* 	jfs_read_inode(struct juzfs_dentry *, int);
+struct juzfs_inode* jfs_read_inode(struct juzfs_dentry *, int);
 int 				jfs_alloc_dentry(struct juzfs_inode*, struct juzfs_dentry*);
 uint64_t  			jfs_alloc_data_blk();
+struct juzfs_dentry*jfs_lookup(const char *, bool*, bool*);
+int 				jfs_calc_lvl(const char * path);
+char* 				jfs_get_name(const char* path);
 
 #endif  /* _juzfs_H_ */
