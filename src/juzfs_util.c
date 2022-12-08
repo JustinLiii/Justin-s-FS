@@ -384,7 +384,7 @@ int jfs_alloc_dentry(struct juzfs_inode* inode, struct juzfs_dentry* dentry)
 
     memcpy(&(inode->dentrys[inode->dir_cnt++]),&dentry,sizeof(struct juzfs_dentry));
 
-    inode->size += sizeof(struct juzfs_dentry_d);
+    // inode->size += sizeof(struct juzfs_dentry_d);
 
     return inode->dir_cnt++;
 } 

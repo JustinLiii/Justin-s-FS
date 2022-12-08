@@ -1,5 +1,6 @@
 #include "juzfs.h"
 #include "types.h"
+#include <stdbool.h>
 
 /******************************************************************************
 * SECTION: 宏定义
@@ -113,7 +114,37 @@ int juzfs_mkdir(const char* path, mode_t mode) {
  * @return int 0成功，否则失败
  */
 int juzfs_getattr(const char* path, struct stat * juzfs_stat) {
-	/* TODO: 解析路径，获取Inode，填充juzfs_stat，可参考/fs/simplefs/sfs.c的sfs_getattr()函数实现 */
+	bool	is_find, is_root;
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	if (is_find == false) {
+		return -1;
+	}
+
+	if (JFS_IS_DIR(dentry->inode)) {
+		juzfs_stat->st_mode = S_IFDIR | JFS_DEFAULT_PERM;
+		juzfs_stat->st_size = dentry->inode->dir_cnt * sizeof(struct juzfs_dentry_d);
+	}
+	else if (JFS_IS_FILE(dentry->inode)) {
+		juzfs_stat->st_mode = S_IFREG | JFS_DEFAULT_PERM;
+		juzfs_stat->st_size = dentry->inode->size;
+	}
+	// else if (SFS_IS_SYM_LINK(dentry->inode)) {
+	// 	juzfs_stat->st_mode = S_IFLNK | SFS_DEFAULT_PERM;
+	// 	juzfs_stat->st_size = dentry->inode->size;
+	// }
+
+	juzfs_stat->st_nlink = 1;
+	juzfs_stat->st_uid 	 = getuid();
+	juzfs_stat->st_gid 	 = getgid();
+	juzfs_stat->st_atime   = time(NULL);
+	juzfs_stat->st_mtime   = time(NULL);
+	juzfs_stat->st_blksize = JFS_BLK_SZ();
+
+	if (is_root) {
+		juzfs_stat->st_size	= super.sz_usage; 
+		juzfs_stat->st_blocks = JFS_DISK_SZ() / JFS_BLK_SZ();
+		juzfs_stat->st_nlink  = 2;		/* !特殊，根目录link数为2 */
+	}
 	return 0;
 }
 

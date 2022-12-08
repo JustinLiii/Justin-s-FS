@@ -103,7 +103,7 @@ struct juzfs_super {
 
 struct juzfs_inode {
     uint32_t                ino;
-    int                     size;                           /* 文件已占用空间 */ //handled by func
+    int                     size;                           /* 文件已占用空间 */ //handled by func 0 if dir
     // char                 target_path[SFS_MAX_FILE_NAME]; /* store traget path when it is a symlink */
     int                     dir_cnt;
     struct juzfs_dentry*    dentry;                         /* 指向该inode的dentry */
