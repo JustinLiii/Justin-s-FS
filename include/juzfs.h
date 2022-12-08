@@ -50,7 +50,8 @@ struct juzfs_inode* jfs_read_inode(struct juzfs_dentry *, int);
 int 				jfs_alloc_dentry(struct juzfs_inode*, struct juzfs_dentry*);
 uint64_t  			jfs_alloc_data_blk();
 struct juzfs_dentry*jfs_lookup(const char *, bool*, bool*);
-int 				jfs_calc_lvl(const char * path);
-char* 				jfs_get_name(const char* path);
+int 				jfs_calc_lvl(const char *);
+char* 				jfs_get_name(const char*);
+struct juzfs_dentry*jfs_get_dentry(struct juzfs_inode *, int);
 
 #endif  /* _juzfs_H_ */

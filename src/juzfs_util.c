@@ -287,6 +287,9 @@ int jfs_sync_inode(struct juzfs_inode * inode) {
             memcpy(dentrys_d[i].name, inode->dentrys[i].name, sizeof(char)*MAX_NAME_LEN);
             dentrys_d[i].ino = inode->dentrys[i].ino;
             dentrys_d[i].ftype = inode->dentrys[i].ftype;
+            if (inode->dentrys[i].inode != NULL) {
+                jfs_sync_inode(inode->dentrys[i].inode);
+            }
         }
 
         if (jfs_driver_write(offset, (uint8_t *)&dentry_d, dentrys_d_size) != 0) {
@@ -545,4 +548,28 @@ char* jfs_get_name(const char* path) {
     char ch = '/';
     char *q = strrchr(path, ch) + 1;
     return q;
+}
+
+/**
+ * @brief 
+ * 
+ * @param inode 
+ * @param dir [0...]
+ * @return struct sfs_dentry* 
+ */
+struct juzfs_dentry* jfs_get_dentry(struct juzfs_inode * inode, int dir) {
+    // struct juzfs_dentry* dentry_cursor = inode->dentrys;
+    // int    cnt = 0;
+    // while (dentry_cursor)
+    // {
+    //     if (dir == cnt) {
+    //         return dentry_cursor;
+    //     }
+    //     cnt++;
+    //     dentry_cursor = dentry_cursor->brother;
+    // }
+    if (dir > inode->dir_cnt)
+        return NULL;
+
+    return &inode->dentrys[dir];
 }

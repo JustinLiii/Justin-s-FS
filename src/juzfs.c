@@ -84,7 +84,7 @@ int juzfs_mkdir(const char* path, mode_t mode) {
 	char* fname;
 	struct juzfs_dentry* last_dentry = jfs_lookup(path, &is_find, &is_root);
 	struct juzfs_dentry* dentry;
-	struct juzfs_inode*  inode;
+	// struct juzfs_inode*  inode;
 
 	// 我们希望 path未找到，但是lookup返回上一级的dentry，且其为目录文件
 	// 如: /a/b/c -> dentry of /a/b, 且 /a/b 为目录
@@ -98,10 +98,10 @@ int juzfs_mkdir(const char* path, mode_t mode) {
 
 	fname  = jfs_get_name(path);
 	dentry = new_dentry(fname, last_dentry,DIR_TYPE);
-	inode  = jfs_alloc_inode(dentry);
+	jfs_alloc_inode(dentry);
 	jfs_alloc_dentry(last_dentry->inode, dentry);
-	jfs_sync_inode(inode);
-	jfs_sync_inode(last_dentry->inode);
+	// jfs_sync_inode(inode);
+	// jfs_sync_inode(inode->dentry->parent->inode);
 	
 	return 0;
 }
@@ -168,8 +168,21 @@ int juzfs_getattr(const char* path, struct stat * juzfs_stat) {
  */
 int juzfs_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
 			    		 struct fuse_file_info * fi) {
-    /* TODO: 解析路径，获取目录的Inode，并读取目录项，利用filler填充到buf，可参考/fs/simplefs/sfs.c的sfs_readdir()函数实现 */
-    return 0;
+    bool	is_find, is_root;
+	int		cur_dir = offset;
+
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_dentry* sub_dentry;
+	struct juzfs_inode* inode;
+	if (is_find) {
+		inode = dentry->inode;
+		sub_dentry = jfs_get_dentry(inode, cur_dir);
+		if (sub_dentry) {
+			filler(buf, sub_dentry->name, NULL, ++offset);
+		}
+		return 0;
+	}
+	return -1;
 }
 
 /**
@@ -181,7 +194,31 @@ int juzfs_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t o
  * @return int 0成功，否则失败
  */
 int juzfs_mknod(const char* path, mode_t mode, dev_t dev) {
-	/* TODO: 解析路径，并创建相应的文件 */
+	bool	is_find, is_root;
+	
+	struct juzfs_dentry* last_dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_dentry* dentry;
+	// struct juzfs_inode* inode;
+	char* fname;
+	
+	if (is_find == true) {
+		return -1;
+	}
+
+	fname = jfs_get_name(path);
+	
+	if (S_ISREG(mode)) {
+		dentry = new_dentry(fname,last_dentry, FILE_TYPE);
+	}
+	else if (S_ISDIR(mode)) {
+		dentry = new_dentry(fname,last_dentry, DIR_TYPE);
+	}
+	else {
+		dentry = new_dentry(fname, last_dentry, FILE_TYPE);
+	}
+	jfs_alloc_inode(dentry);
+	jfs_alloc_dentry(last_dentry->inode, dentry);
+
 	return 0;
 }
 
