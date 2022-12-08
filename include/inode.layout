@@ -1,0 +1,18 @@
+# new inode
+
+inode map updated
+
+
+inode->ino  = ino_cursor; 
+inode->size = 0;
+                                                      /* dentry指向inode */
+dentry->inode = inode;
+dentry->ino   = inode->ino;
+                                                      /* inode指回dentry */
+inode->dentry = dentry;
+    
+inode->dir_cnt = 0;
+inode->dentrys = NULL;
+inode->dentrys_list_size = 0;
+    
+memset(inode->data_offsets, 0, sizeof(uint64_t)*JFS_DATA_PER_FILE);
