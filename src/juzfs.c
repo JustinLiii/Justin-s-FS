@@ -1,6 +1,8 @@
 #include "juzfs.h"
 #include "types.h"
+#include <asm-generic/errno-base.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 /******************************************************************************
 * SECTION: 宏定义
@@ -90,11 +92,13 @@ int juzfs_mkdir(const char* path, mode_t mode) {
 	// 我们希望 path未找到，但是lookup返回上一级的dentry，且其为目录文件
 	// 如: /a/b/c -> dentry of /a/b, 且 /a/b 为目录
 	if (is_find) {
-		return -1;
+		// SFS_DBG("File/Dir already exists");
+		return -EEXIST;
 	}
 
 	if (JFS_IS_FILE(last_dentry->inode)) {
-		return -1;
+		// SFS_DBG("No such directory, but exist a file");
+		return -ENXIO;
 	}
 
 	fname  = jfs_get_name(path);
@@ -118,7 +122,7 @@ int juzfs_getattr(const char* path, struct stat * juzfs_stat) {
 	bool	is_find, is_root;
 	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
 	if (is_find == false) {
-		return -1;
+		return -ENOENT;
 	}
 
 	if (JFS_IS_DIR(dentry->inode)) {
@@ -183,7 +187,8 @@ int juzfs_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t o
 		}
 		return 0;
 	}
-	return -1;
+	printf("Not found\n");
+	return -ENOENT;
 }
 
 /**
@@ -203,7 +208,8 @@ int juzfs_mknod(const char* path, mode_t mode, dev_t dev) {
 	char* fname;
 	
 	if (is_find == true) {
-		return -1;
+		// SFS_DBG("File Already Exists");
+		return -EEXIST;
 	}
 
 	fname = jfs_get_name(path);

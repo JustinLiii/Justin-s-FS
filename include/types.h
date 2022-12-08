@@ -34,7 +34,7 @@ struct custom_options {
 #define JFS_INODE_PER_FILE      1
 #define JFS_DATA_PER_FILE       6
 
-#define JFS_DENTRYS_SEG_SIZE    8
+// #define JFS_DENTRYS_SEG_SIZE    7
 
 // #define SFS_IOC_MAGIC           'S'
 // #define SFS_IOC_SEEK            _IO(SFS_IOC_MAGIC, 0)
@@ -46,19 +46,20 @@ struct custom_options {
 * SECTION: Macro Functions
 *******************************************************************************/
 #define JFS_IO_SZ()                     (super.sz_io)
-#define JFS_BLK_SZ()                    (JFS_IO_SZ() * (uint64_t)2)
+#define JFS_BLK_SZ()                    (JFS_IO_SZ() * 2)
 #define JFS_DISK_SZ()                   (super.sz_disk)
 #define JFS_DRIVER()                    (super.fd)
+#define JFS_DENTRYS_SEG_SIZE()          (JFS_BLK_SZ() / sizeof(struct juzfs_dentry_d))
 
 #define JFS_INODE_DATA_OFS_ARRAY_SIZE() (sizeof(uint64_t)*JFS_DATA_PER_FILE)
 
-#define JFS_ROUND_DOWN(value, round)    (value % round == 0 ? value : (value / round) * round)
-#define JFS_ROUND_UP(value, round)      (value % round == 0 ? value : (value / round + (uint64_t)1) * round)
+#define JFS_ROUND_DOWN(value, round)    ((value) % (round) == 0 ? (value) : ((value) / (round)) * (round))
+#define JFS_ROUND_UP(value, round)      ((value) % (round) == 0 ? (value) : ((value) / (round) + 1) * (round))
 
-#define JFS_BLKS_SZ(blks)               (blks * JFS_BLK_SZ())
+#define JFS_BLKS_SZ(blks)               ((blks) * JFS_BLK_SZ())
 
 #define JFS_MAP_INO_OFS()                (super.map_inode_offset * JFS_BLK_SZ())
-#define JFS_INO_OFS(ino)                ((super.ino_list_offset + ino) * JFS_BLK_SZ())
+#define JFS_INO_OFS(ino)                ((super.ino_list_offset + (ino)) * JFS_BLK_SZ())
 #define JFS_DATA_OFS(blkno)               (super.data_offset + JFS_BLKS_SZ(blkno))
 
 #define JFS_IS_DIR(pinode)              (pinode->dentry->ftype == DIR_TYPE)

@@ -13,7 +13,10 @@
 #include "errno.h"
 #include "types.h"
 
-
+/******************************************************************************
+* SECTION: macro debug
+*******************************************************************************/
+#define SFS_DBG(fmt, ...) do { printf("SFS_DBG: " fmt, ##__VA_ARGS__); } while(0) 
 /******************************************************************************
 * SECTION: juzfs.c
 *******************************************************************************/
@@ -53,6 +56,11 @@ struct juzfs_dentry*jfs_lookup(const char *, bool*, bool*);
 int 				jfs_calc_lvl(const char *);
 char* 				jfs_get_name(const char*);
 struct juzfs_dentry*jfs_get_dentry(struct juzfs_inode *, int);
-int 				sfs_umount();
+int 				jfs_umount(void);
+
+/******************************************************************************
+* SECTION: juzfs_debug.c
+*******************************************************************************/
+void jfs_dump_map(void);
 
 #endif  /* _juzfs_H_ */
