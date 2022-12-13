@@ -4,10 +4,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 extern struct juzfs_super super; 
 extern struct custom_options juzfs_options;
+
+int inode_cnt = 0;
 
 /**
  * @brief 挂载sfs, Layout 如下
@@ -86,8 +89,8 @@ int jfs_mount(struct custom_options options){
         juzfs_super_d.map_data_blks     = map_data_blks;
         juzfs_super_d.map_data_offset   = juzfs_super_d.map_inode_offset + JFS_BLKS_SZ((uint64_t) map_inode_blks);
         juzfs_super_d.ino_list_blks     = inode_num;
-        juzfs_super_d.ino_list_offset   = super.map_data_offset + JFS_BLKS_SZ((uint64_t)map_data_blks);
-        juzfs_super_d.data_offset       = super.ino_list_offset + JFS_BLKS_SZ((uint64_t)inode_num);
+        juzfs_super_d.ino_list_offset   = juzfs_super_d.map_data_offset + JFS_BLKS_SZ((uint64_t)map_data_blks);
+        juzfs_super_d.data_offset       = juzfs_super_d.ino_list_offset + JFS_BLKS_SZ((uint64_t)inode_num);
 
         juzfs_super_d.sz_usage          = 0;
         is_init                         = true;
@@ -197,7 +200,7 @@ int jfs_driver_write(int offset, uint8_t *in_content, int size) {
     while (size_aligned != 0)
     {
         // write(SFS_DRIVER(), cur, SFS_IO_SZ());
-        ddriver_write(JFS_DRIVER(), cur, JFS_IO_SZ());
+        ddriver_write(JFS_DRIVER(), (char*)cur, JFS_IO_SZ());
         cur          += JFS_IO_SZ();
         size_aligned -= JFS_IO_SZ();   
     }
@@ -226,6 +229,8 @@ struct juzfs_inode* jfs_alloc_inode(struct juzfs_dentry * dentry) {
             if((super.map_inode[byte_cursor] & (0x1 << bit_cursor)) == 0) {    
                                                       /* 当前ino_cursor位置空闲 */
                 super.map_inode[byte_cursor] |= (0x1 << bit_cursor);
+                inode_cnt++;
+                printf("allocated inode %s\n",dentry->name);
                 is_find_free_entry = true;           
                 break;
             }
@@ -359,7 +364,7 @@ struct juzfs_inode* jfs_read_inode(struct juzfs_dentry * dentry, int ino) {
 
             sub_dentry->ino = dentrys_d[i].ino;
 
-            jfs_alloc_dentry(inode, sub_dentry);
+            jfs_alloc_dentry(inode, sub_dentry,false);
         }
 
         free(dentrys_d);
@@ -374,31 +379,23 @@ struct juzfs_inode* jfs_read_inode(struct juzfs_dentry * dentry, int ino) {
  * @param dentry 
  * @return int 
  */
-int jfs_alloc_dentry(struct juzfs_inode* inode, struct juzfs_dentry* dentry)
+int jfs_alloc_dentry(struct juzfs_inode* inode, struct juzfs_dentry* dentry, bool alloc_d)
 {
     struct juzfs_dentry* old_dentrys;
     int new_list_size;
-
-    dentry->inode = inode;
 
     // 空间不足
     if (inode->dentrys_list_size < inode->dir_cnt+1) {
 
         old_dentrys = inode->dentrys;
 
-        // int size = JFS_DENTRYS_SEG_SIZE();
-        // if ((inode->dir_cnt+1 % size) == 0) {
-        //     new_list_size = inode->dir_cnt+1;
-        // } else {
-        //     int div = ((inode->dir_cnt)+1 / size);
-        //     new_list_size = div * size;
-        // }
         new_list_size = JFS_ROUND_UP(inode->dir_cnt+1,JFS_DENTRYS_SEG_SIZE());
 
         // 目录超过六块
         if (new_list_size / JFS_DENTRYS_SEG_SIZE() > JFS_DATA_PER_FILE) return -ENOSPC;
 
-        inode->data_offsets[new_list_size / JFS_DENTRYS_SEG_SIZE() - 1] = jfs_alloc_data_blk();
+        if (alloc_d)
+            inode->data_offsets[new_list_size / JFS_DENTRYS_SEG_SIZE() - 1] = jfs_alloc_data_blk();
 
         inode->dentrys = (struct juzfs_dentry*)malloc(sizeof(struct juzfs_dentry) * new_list_size);
 
@@ -423,7 +420,7 @@ int jfs_alloc_dentry(struct juzfs_inode* inode, struct juzfs_dentry* dentry)
  * 
  * @return uint64_t 数据块 offset
  */
-uint64_t  jfs_alloc_data_blk()
+uint64_t  jfs_alloc_data_blk(void)
 {
     int byte_cursor = 0; 
     int bit_cursor  = 0; 
@@ -435,7 +432,7 @@ uint64_t  jfs_alloc_data_blk()
     {
         for (bit_cursor = 0; bit_cursor < UINT8_BITS; bit_cursor++) {
             if((super.map_data[byte_cursor] & (0x1 << bit_cursor)) == 0) {    
-                                                      /* 当前ino_cursor位置空闲 */
+                /* 当前blk_cursor位置空闲 */
                 super.map_data[byte_cursor] |= (0x1 << bit_cursor);
                 is_find_free_entry = true;           
                 break;
@@ -617,10 +614,17 @@ int jfs_umount(void) {
     jfs_sync_inode(super.root_dentry->inode);     /* 从根节点向下刷写节点 */
                                                     
     juzfs_super_d.magic               = JFS_MAGIC;
+    juzfs_super_d.sz_usage            = super.sz_usage;
+
+    juzfs_super_d.max_ino             = super.max_ino;
     juzfs_super_d.map_inode_blks      = super.map_inode_blks;
     juzfs_super_d.map_inode_offset    = super.map_inode_offset;
+    juzfs_super_d.max_data_blks       = super.max_data_blks;
+    juzfs_super_d.map_data_blks       = super.map_data_blks;
+    juzfs_super_d.map_data_offset     = super.map_data_offset;
+    juzfs_super_d.ino_list_blks       = super.ino_list_blks;
+    juzfs_super_d.ino_list_offset     = super.ino_list_offset;
     juzfs_super_d.data_offset         = super.data_offset;
-    juzfs_super_d.sz_usage            = super.sz_usage;
 
     if (jfs_driver_write(JFS_SUPER_OFS, (uint8_t *)&juzfs_super_d, 
                      sizeof(struct juzfs_super_d)) != 0) {
@@ -640,6 +644,8 @@ int jfs_umount(void) {
     free(super.map_inode);
     free(super.map_data);
     ddriver_close(JFS_DRIVER());
+
+    printf("inode count=%d\n",inode_cnt);
 
     return 0;
 }

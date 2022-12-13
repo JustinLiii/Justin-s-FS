@@ -24,4 +24,4 @@
 #    实际的数据块数量一致.
 
 | BSIZE = 1024 B |
-| Super(1) | Inode Map(1) | Block Map(1) | Inode List(1) | DATA(*) |
+| Super(1) | Inode Map(1) | Data Map(4) | Inode List(584) | DATA(*) |

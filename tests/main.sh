@@ -79,6 +79,7 @@ function core_tester() {
 }
 
 function clean_ddriver() {
+    sleep 1
     ddriver -r > /dev/null
 }
 

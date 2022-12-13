@@ -29,10 +29,10 @@ static struct fuse_operations operations = {
 	.getattr = juzfs_getattr,				 /* 获取文件属性，类似stat，必须完成 */
 	.readdir = juzfs_readdir,				 /* 填充dentrys */
 	.mknod = juzfs_mknod,					 /* 创建文件，touch相关 */
-	.write = NULL,								  	 /* 写入文件 */
-	.read = NULL,								  	 /* 读文件 */
+	.write = juzfs_write,								  	 /* 写入文件 */
+	.read = juzfs_read,								  	 /* 读文件 */
 	.utimens = juzfs_utimens,				 /* 修改时间，忽略，避免touch报错 */
-	.truncate = NULL,						  		 /* 改变文件大小 */
+	.truncate = juzfs_truncate,						  		 /* 改变文件大小 */
 	.unlink = NULL,							  		 /* 删除文件 */
 	.rmdir	= NULL,							  		 /* 删除目录， rm -r */
 	.rename = NULL,							  		 /* 重命名，mv */
@@ -52,7 +52,7 @@ static struct fuse_operations operations = {
  */
 void* juzfs_init(struct fuse_conn_info * conn_info) {
 	if (jfs_mount(juzfs_options) != 0) {
-        // SFS_DBG("[%s] mount error\n", __func__);
+        SFS_DBG("[%s] mount error\n", __func__);
 		fuse_exit(fuse_get_context()->fuse);
 		return NULL;
 	} 
@@ -67,7 +67,7 @@ void* juzfs_init(struct fuse_conn_info * conn_info) {
  */
 void juzfs_destroy(void* p) {
 	if (jfs_umount() != 0) {
-		// SFS_DBG("[%s] unmount error\n", __func__);
+		SFS_DBG("[%s] unmount error\n", __func__);
 		fuse_exit(fuse_get_context()->fuse);
 		return;
 	}
@@ -104,7 +104,7 @@ int juzfs_mkdir(const char* path, mode_t mode) {
 	fname  = jfs_get_name(path);
 	dentry = new_dentry(fname, last_dentry,DIR_TYPE);
 	jfs_alloc_inode(dentry);
-	jfs_alloc_dentry(last_dentry->inode, dentry);
+	jfs_alloc_dentry(last_dentry->inode, dentry, true);
 	// jfs_sync_inode(inode);
 	// jfs_sync_inode(inode->dentry->parent->inode);
 	
@@ -224,7 +224,7 @@ int juzfs_mknod(const char* path, mode_t mode, dev_t dev) {
 		dentry = new_dentry(fname, last_dentry, FILE_TYPE);
 	}
 	jfs_alloc_inode(dentry);
-	jfs_alloc_dentry(last_dentry->inode, dentry);
+	jfs_alloc_dentry(last_dentry->inode, dentry,true);
 
 	return 0;
 }
@@ -255,7 +255,47 @@ int juzfs_utimens(const char* path, const struct timespec tv[2]) {
  */
 int juzfs_write(const char* path, const char* buf, size_t size, off_t offset,
 		        struct fuse_file_info* fi) {
-	/* 选做 */
+	bool	is_find, is_root;
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_inode*  inode;
+	
+	if (is_find == false) {
+		return -ENOENT;
+	}
+
+	inode = dentry->inode;
+	
+	if (JFS_IS_DIR(inode)) {
+		return -EISDIR;	
+	}
+
+	if (inode->size < offset) {
+		return -ESPIPE;
+	}
+
+	int start_blk = offset/JFS_BLK_SZ();
+	int end_blk = (size+offset)/JFS_BLK_SZ();
+
+	for (int i = start_blk;i < end_blk + 1; i++) {
+		off_t loc = (i == start_blk) ? inode->data_offsets[start_blk] + offset : inode->data_offsets[i];
+		int length;
+		if (start_blk == end_blk) {
+			length = size;
+		} else if (i == start_blk) {
+			length = JFS_BLK_SZ()-offset;
+		} else if (i == end_blk) {
+			length = (offset + size) % JFS_BLK_SZ();
+		} else {
+			length = JFS_BLK_SZ();
+		}
+		if (jfs_driver_write(loc, buf, length)) {
+			return -EIO;
+		}
+		buf += length;
+	}
+
+	inode->size = offset + size > inode->size ? offset + size : inode->size;
+
 	return size;
 }
 
@@ -271,7 +311,44 @@ int juzfs_write(const char* path, const char* buf, size_t size, off_t offset,
  */
 int juzfs_read(const char* path, char* buf, size_t size, off_t offset,
 		       struct fuse_file_info* fi) {
-	/* 选做 */
+	bool	is_find, is_root;
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_inode*  inode;
+
+	if (is_find == false) {
+		return -ENOENT;
+	}
+
+	inode = dentry->inode;
+	
+	if (JFS_IS_DIR(inode)) {
+		return -EISDIR;	
+	}
+
+	if (inode->size < offset) {
+		return -ESPIPE;
+	}
+
+	int start_blk = offset/JFS_BLK_SZ();
+	int end_blk = (size+offset)/JFS_BLK_SZ();
+	
+	for (int i = start_blk;i < end_blk+1; i++) {
+		off_t loc = (i == start_blk) ? inode->data_offsets[start_blk] + offset : inode->data_offsets[i];
+		int length;
+		if (start_blk == end_blk) {
+			length = size;
+		} else if (i == start_blk) {
+			length = JFS_BLK_SZ()-offset;
+		} else if (i == end_blk) {
+			length = (offset + size) % JFS_BLK_SZ();
+		} else {
+			length = JFS_BLK_SZ();
+		}
+		if (jfs_driver_read(loc, buf, length)) {
+			return -EIO;
+		}
+		buf += length;
+	}
 	return size;			   
 }
 
@@ -348,7 +425,36 @@ int juzfs_opendir(const char* path, struct fuse_file_info* fi) {
  * @return int 0成功，否则失败
  */
 int juzfs_truncate(const char* path, off_t offset) {
-	/* 选做 */
+	bool	is_find, is_root;
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_inode*  inode;
+	
+	if (is_find == false) {
+		return -EEXIST;
+	}
+	
+	inode = dentry->inode;
+
+	if (JFS_IS_DIR(inode)) {
+		return -EISDIR;
+	}
+
+	int new_blks = JFS_ROUND_UP(offset,JFS_BLK_SZ())/JFS_BLK_SZ();
+	int file_blks = JFS_ROUND_UP(inode->size,JFS_BLK_SZ()) /JFS_BLK_SZ();
+
+	if(new_blks > JFS_DATA_PER_FILE) {
+		return -ENOSPC;
+	}
+
+	//alloc blk
+	if(new_blks > file_blks) {
+		for (int i = file_blks; i < new_blks; i++){
+			inode->data_offsets[i] = jfs_alloc_data_blk();
+		}
+	}
+
+	inode->size = offset;
+
 	return 0;
 }
 
