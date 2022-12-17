@@ -33,13 +33,13 @@ static struct fuse_operations operations = {
 	.read = juzfs_read,								  	 /* 读文件 */
 	.utimens = juzfs_utimens,				 /* 修改时间，忽略，避免touch报错 */
 	.truncate = juzfs_truncate,						  		 /* 改变文件大小 */
-	.unlink = NULL,							  		 /* 删除文件 */
-	.rmdir	= NULL,							  		 /* 删除目录， rm -r */
-	.rename = NULL,							  		 /* 重命名，mv */
+	.unlink = juzfs_unlink,							  		 /* 删除文件 */
+	.rmdir	= juzfs_rmdir,							  		 /* 删除目录， rm -r */
+	.rename = juzfs_rename,							  		 /* 重命名，mv */
 
-	.open = NULL,							
-	.opendir = NULL,
-	.access = NULL
+	.open = juzfs_open,							
+	.opendir = juzfs_opendir,
+	.access = juzfs_access
 };
 /******************************************************************************
 * SECTION: 必做函数实现
@@ -288,7 +288,7 @@ int juzfs_write(const char* path, const char* buf, size_t size, off_t offset,
 		} else {
 			length = JFS_BLK_SZ();
 		}
-		if (jfs_driver_write(loc, buf, length)) {
+		if (jfs_driver_write(loc, buf, length) != 0) {
 			return -EIO;
 		}
 		buf += length;
@@ -344,7 +344,7 @@ int juzfs_read(const char* path, char* buf, size_t size, off_t offset,
 		} else {
 			length = JFS_BLK_SZ();
 		}
-		if (jfs_driver_read(loc, buf, length)) {
+		if (jfs_driver_read(loc, buf, length) != 0) {
 			return -EIO;
 		}
 		buf += length;
@@ -359,7 +359,18 @@ int juzfs_read(const char* path, char* buf, size_t size, off_t offset,
  * @return int 0成功，否则失败
  */
 int juzfs_unlink(const char* path) {
-	/* 选做 */
+	bool	is_find, is_root;
+	struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	struct juzfs_inode*  inode;
+
+	if (is_find == false) {
+		return -ENOENT;
+	}
+
+	inode = dentry->inode;
+
+	juzfs_drop_inode(inode);
+	juzfs_drop_dentry(dentry->parent->inode, dentry);
 	return 0;
 }
 
@@ -376,7 +387,7 @@ int juzfs_unlink(const char* path) {
  * @return int 0成功，否则失败
  */
 int juzfs_rmdir(const char* path) {
-	/* 选做 */
+	juzfs_unlink(path);
 	return 0;
 }
 
@@ -388,8 +399,41 @@ int juzfs_rmdir(const char* path) {
  * @return int 0成功，否则失败
  */
 int juzfs_rename(const char* from, const char* to) {
-	/* 选做 */
-	return 0;
+	int ret = 0;
+	bool   is_find, is_root;
+	struct juzfs_dentry* from_dentry = jfs_lookup(from, &is_find, &is_root);
+	struct juzfs_inode*  from_inode;
+	struct juzfs_dentry* to_dentry;
+	mode_t mode = 0;
+	if (is_find == false) {
+		return -ENOENT;
+	}
+
+	if (strcmp(from, to) == 0) {
+		return 0;
+	}
+
+	from_inode = from_dentry->inode;
+	
+	if (JFS_IS_DIR(from_inode)) {
+		mode = S_IFDIR;
+	}
+	else if (JFS_IS_FILE(from_inode)) {
+		mode = S_IFREG;
+	}
+	
+	ret = juzfs_mknod(to, mode, NULL);
+	if (ret != 0) {					  /* 保证目的文件不存在 */
+		return ret;
+	}
+	
+	to_dentry = jfs_lookup(to, &is_find, &is_root);	  
+	juzfs_drop_inode(to_dentry->inode);				  /* 保证生成的inode被释放 */	
+	to_dentry->ino = from_inode->ino;				  /* 指向新的inode */
+	to_dentry->inode = from_inode;
+	
+	juzfs_drop_dentry(from_dentry->parent->inode, from_dentry);
+	return ret;
 }
 
 /**
@@ -472,8 +516,31 @@ int juzfs_truncate(const char* path, off_t offset) {
  * @return int 0成功，否则失败
  */
 int juzfs_access(const char* path, int type) {
-	/* 选做: 解析路径，判断是否存在 */
-	return 0;
+	bool	is_find, is_root;
+	bool is_access_ok = false;
+	// struct juzfs_dentry* dentry = jfs_lookup(path, &is_find, &is_root);
+	// struct juzfs_inode*  inode;
+
+	switch (type)
+	{
+	case R_OK:
+		is_access_ok = true;
+		break;
+	case F_OK:
+		if (is_find) {
+			is_access_ok = true;
+		}
+		break;
+	case W_OK:
+		is_access_ok = true;
+		break;
+	case X_OK:
+		is_access_ok = true;
+		break;
+	default:
+		break;
+	}
+	return is_access_ok ? 0 : -EACCES;
 }	
 /******************************************************************************
 * SECTION: FUSE入口

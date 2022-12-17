@@ -57,6 +57,9 @@ int 				jfs_calc_lvl(const char *);
 char* 				jfs_get_name(const char*);
 struct juzfs_dentry*jfs_get_dentry(struct juzfs_inode *, int);
 int 				jfs_umount(void);
+int  				jfs_dealloc_data_blk(int);
+int 				juzfs_drop_dentry(struct juzfs_inode *, struct juzfs_dentry *);
+int 				juzfs_drop_inode(struct juzfs_inode *);
 
 /******************************************************************************
 * SECTION: juzfs_debug.c

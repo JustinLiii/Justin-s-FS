@@ -303,7 +303,7 @@ int jfs_sync_inode(struct juzfs_inode * inode) {
         }
 
         for (blk_cursor = 0; blk_cursor < inode->dir_cnt / JFS_DENTRYS_SEG_SIZE(); blk_cursor++) {              
-            offset= inode->data_offsets[blk_cursor];
+            offset= JFS_DATA_OFS(inode->data_offsets[blk_cursor]);
 
             if (jfs_driver_write(offset, (uint8_t *)&dentrys_d[blk_cursor * JFS_DENTRYS_SEG_SIZE()], JFS_DENTRYS_SEG_SIZE()*sizeof(struct juzfs_dentry_d)) != 0) {
                 return -EIO;                     
@@ -350,7 +350,7 @@ struct juzfs_inode* jfs_read_inode(struct juzfs_dentry * dentry, int ino) {
         dentrys_d       = (struct juzfs_dentry_d*)malloc(dentrys_d_size);
 
         for (blk_cursor = 0; blk_cursor < inode->dir_cnt / JFS_DENTRYS_SEG_SIZE(); blk_cursor++){            
-            offset = inode->data_offsets[blk_cursor];
+            offset = JFS_DATA_OFS(inode->data_offsets[blk_cursor]);
 
             if (jfs_driver_read(offset, (uint8_t *)&dentrys_d[blk_cursor * JFS_DENTRYS_SEG_SIZE()], JFS_DENTRYS_SEG_SIZE()*sizeof(struct juzfs_dentry_d)) != 0){
                 return NULL;
@@ -447,7 +447,21 @@ uint64_t  jfs_alloc_data_blk(void)
     if (!is_find_free_entry || blk_cursor == super.max_data_blks)
         return -ENOSPC;
 
-    return JFS_DATA_OFS(blk_cursor);
+    return blk_cursor;
+}
+
+/**
+ * @brief 释放一个数据块
+ * 
+ * @return int
+ */
+int  jfs_dealloc_data_blk(int blk_num) {
+    int byte_cursor = blk_num / UINT8_BITS; 
+    int bit_cursor  = blk_num % UINT8_BITS;
+
+    super.map_data[byte_cursor] &= (uint8_t)(~(0x1 << bit_cursor));
+
+    return 0;
 }
 
 /**
@@ -583,17 +597,7 @@ char* jfs_get_name(const char* path) {
  * @return struct sfs_dentry* 
  */
 struct juzfs_dentry* jfs_get_dentry(struct juzfs_inode * inode, int dir) {
-    // struct juzfs_dentry* dentry_cursor = inode->dentrys;
-    // int    cnt = 0;
-    // while (dentry_cursor)
-    // {
-    //     if (dir == cnt) {
-    //         return dentry_cursor;
-    //     }
-    //     cnt++;
-    //     dentry_cursor = dentry_cursor->brother;
-    // }
-    if (dir > inode->dir_cnt)
+    if (dir > inode->dir_cnt-1)
         return NULL;
 
     return &inode->dentrys[dir];
@@ -647,5 +651,126 @@ int jfs_umount(void) {
 
     printf("inode count=%d\n",inode_cnt);
 
+    return 0;
+}
+
+/**
+ * @brief 将dentry从inode的dentrys中取出
+ * 
+ * @param inode 
+ * @param dentry 
+ * @return int 
+ */
+int juzfs_drop_dentry(struct juzfs_inode * inode, struct juzfs_dentry * dentry) {
+    struct juzfs_dentry* old_dentrys;
+    int new_list_size;
+    bool is_find = false;
+    int dentry_cursor;
+    
+    for (dentry_cursor=0; dentry_cursor < inode->dir_cnt;dentry_cursor++) {
+        if (strcmp(inode->dentrys[dentry_cursor].name,dentry->name) == 0) {
+            is_find = true;
+            break;
+        }
+    }
+    if (!is_find) {
+        return -ENOENT;
+    }
+
+    //将要删除的dentry之后的dentry往前移
+    if (dentry_cursor != inode->dir_cnt-1) 
+        memcpy(&(inode->dentrys[dentry_cursor]),&(inode->dentrys[dentry_cursor+1]),sizeof(struct juzfs_dentry) * (inode->dir_cnt - dentry_cursor - 1));
+
+    old_dentrys = inode->dentrys;
+    new_list_size = JFS_ROUND_UP((inode->dir_cnt-1),JFS_DENTRYS_SEG_SIZE());
+    inode->dir_cnt--;
+
+    int a = new_list_size/JFS_DENTRYS_SEG_SIZE();
+    for(int i = inode->dentrys_list_size/JFS_DENTRYS_SEG_SIZE()-1; i >= a; i--){
+        jfs_dealloc_data_blk(inode->data_offsets[i]);
+    }
+
+    if (inode->dentrys_list_size/JFS_DENTRYS_SEG_SIZE() != new_list_size/JFS_DENTRYS_SEG_SIZE() && inode->dir_cnt != 0) {
+        inode->dentrys = (struct juzfs_dentry*)malloc(sizeof(struct juzfs_dentry) * new_list_size);
+        memcpy(inode->dentrys, old_dentrys, sizeof(struct juzfs_dentry)*inode->dir_cnt);
+        free(old_dentrys);
+    }
+
+    if(inode->dir_cnt == 0) {
+        inode->dentrys = NULL;
+    }
+
+    inode->dentrys_list_size = new_list_size;
+    
+    return inode->dir_cnt;
+}
+
+/**
+ * @brief 删除内存中的一个inode， 暂时不释放
+ * Case 1: Reg File
+ * 
+ *                  Inode
+ *                /      \
+ *            Dentry -> Dentry (Reg Dentry)
+ *                       |
+ *                      Inode  (Reg File)
+ * 
+ *  1) Step 1. Erase Bitmap     
+ *  2) Step 2. Free Inode                      (Function of sfs_drop_inode)
+ * ------------------------------------------------------------------------
+ *  3) *Setp 3. Free Dentry belonging to Inode (Outsider)
+ * ========================================================================
+ * Case 2: Dir
+ *                  Inode
+ *                /      \
+ *            Dentry -> Dentry (Dir Dentry)
+ *                       |
+ *                      Inode  (Dir)
+ *                    /     \
+ *                Dentry -> Dentry
+ * 
+ *   Recursive
+ * @param inode 
+ * @return int 
+ */
+int juzfs_drop_inode(struct juzfs_inode * inode) {
+    struct juzfs_dentry*  dentry_cursor;
+    struct juzfs_dentry*  dentry_to_free;
+    struct juzfs_inode*   inode_cursor;
+
+    int byte_cursor; 
+    int bit_cursor; 
+    bool is_find = false;
+    int data_blks;
+
+    if (inode == super.root_dentry->inode) {
+        return -EINVAL;
+    }
+
+    /* 调整inodemap */
+    byte_cursor = (int)(inode->ino)/UINT8_BITS;
+    bit_cursor  = (int)(inode->ino)%UINT8_BITS;
+    super.map_inode[byte_cursor] &= (uint8_t)(~(0x1 << bit_cursor));
+
+    if (JFS_IS_DIR(inode)) {
+        for(int i = 0; i<inode->dir_cnt;i++)
+        {   
+            dentry_cursor = &(inode->dentrys[i]);
+            inode_cursor = dentry_cursor->inode;
+            juzfs_drop_inode(inode_cursor);
+            juzfs_drop_dentry(inode, dentry_cursor);
+        }
+    }
+    else if (JFS_IS_FILE(inode)) {
+        data_blks = JFS_ROUND_UP(inode->size,JFS_BLK_SZ() / JFS_BLK_SZ());
+
+        if (inode->data_offsets){
+            for (int i = 0; i < data_blks; i++) {
+                jfs_dealloc_data_blk(inode->data_offsets[i]);
+            }
+        }
+    }
+    
+    free(inode);
     return 0;
 }
