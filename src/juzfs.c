@@ -495,6 +495,10 @@ int juzfs_truncate(const char* path, off_t offset) {
 		for (int i = file_blks; i < new_blks; i++){
 			inode->data_offsets[i] = jfs_alloc_data_blk();
 		}
+	} else if (new_blks < file_blks) {
+		for (int i = file_blks; i < new_blks; i++) {
+			jfs_dealloc_data_blk(inode->data_offsets[i]);
+		}
 	}
 
 	inode->size = offset;
